@@ -1,0 +1,13 @@
+Updates:
+
+v0.1: Streamlined version of code made from a combination of most of the model files 
+made in the gce-prob-prog directory.
+
+v0.2: Updated naming scheme. 
+
+    1. Now instead of the "poissonian_ed.py" defaulting to the "canon"
+    simulation file. Now, you specify the name of the file in "data_file".
+    
+    2. Allow IDs to specify custom bulge templates and simulation ID.
+    
+    3. Allow for true hybrid templates
