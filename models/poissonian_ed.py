@@ -847,6 +847,7 @@ class EbinPoissonModel:
                 new_samples[k] = samples[k]
         return new_samples
         
+    # NOTE: Can probably achieve this using Predictive
     def get_gp_samples(self, num_samples=1000, custom_mask = None):
         nside = self.nside
         Nu = self.Nu
@@ -934,4 +935,82 @@ class EbinPoissonModel:
         else:
             raise ValueError('GP is not enabled.')
         
+    #========== NeuTra ==========
+    def get_neutra_model(self):
+        """Get model reparameterized via neural transport."""
+        neutra = NeuTraReparam(self.guide, self.svi_results.params)
+        model = lambda x: self.model(**self.svi_model_static_kwargs)
+        self.model_neutra = neutra.reparam(model)
         
+    
+    #========== NUTS ==========
+    def run_nuts(self, num_chains=4, num_warmup=500, num_samples=5000, step_size=0.1,
+                 rng_key=jax.random.PRNGKey(0), use_neutra=True, **model_static_kwargs):
+        
+        if use_neutra:
+            self.get_neutra_model()
+            model = self.model_neutra
+        else:
+            model = self.model
+        
+        kernel = NUTS(model, max_tree_depth=4, dense_mass=False, step_size=step_size)
+        self.nuts_mcmc = MCMC(kernel, num_warmup=num_warmup, num_samples=num_samples, num_chains=num_chains, chain_method='vectorized')
+        if use_neutra:
+            self.nuts_mcmc.run(rng_key, None)
+        else:
+            self.nuts_mcmc.run(rng_key, **model_static_kwargs)
+        
+        return self.nuts_mcmc
+    
+    
+    #========== PTHMC ==========
+    def run_parallel_tempering_hmc(self, num_samples=5000, step_size_base=5e-2, num_leapfrog_steps=3, num_adaptation_steps=600, rng_key=jax.random.PRNGKey(0), use_neutra=True):
+        
+        # Geometric temperatures decay
+        inverse_temperatures = 0.5 ** jnp.arange(4.)
+
+        # If everything was Normal, step_size should be ~ sqrt(temperature).
+        step_size = step_size_base / jnp.sqrt(inverse_temperatures)[..., None]
+
+        def make_kernel_fn(target_log_prob_fn):
+
+            hmc = tfp.mcmc.HamiltonianMonteCarlo(
+            target_log_prob_fn=target_log_prob_fn,
+            step_size=step_size, num_leapfrog_steps=num_leapfrog_steps)
+
+            adapted_kernel = tfp.mcmc.SimpleStepSizeAdaptation(
+            inner_kernel=hmc,
+            num_adaptation_steps=num_adaptation_steps)
+
+            return adapted_kernel
+        
+        if use_neutra:
+            self.get_neutra_model()
+            model = self.model_neutra
+        else:
+            model = lambda x: self.model(**self.svi_model_static_kwargs)
+        
+        kernel = ReplicaExchangeMC(model, inverse_temperatures=inverse_temperatures, make_kernel_fn=make_kernel_fn)
+        self.pt_mcmc = MCMC(kernel, num_warmup=num_adaptation_steps, num_samples=num_samples, num_chains=1, chain_method='vectorized')
+        self.pt_mcmc.run(rng_key, None)
+        
+        return self.pt_mcmc
+    
+    
+    #========== MAP ==========
+    def fit_MAP(
+        self, rng_key=jax.random.PRNGKey(42),
+        lr=0.1, n_steps=10000, num_particles=8,
+        **model_static_kwargs,
+    ):
+        guide = autoguide.AutoDelta(self.model)
+        optimizer = optim.optax_to_numpyro(optax.chain(optax.clip(1.), optax.adamw(lr)))
+        svi = SVI(
+            self.model, guide, optimizer,
+            loss=Trace_ELBO(num_particles=num_particles),
+            **model_static_kwargs,
+        )
+        svi_results = svi.run(rng_key, n_steps)
+        self.MAP_estimates = guide.median(svi_results.params)
+        
+        return svi_results

@@ -1367,7 +1367,7 @@ def summary_from_filename(id_str):
 
 def load_data_dir(sim_name):
 #     main_dir = '/home/edr76/gce-bulge-ed/gce-prob-prog-ed-v0.2/'
-    main_dir = '/data/edr76/gce-prob-prog-ed-v0.2/'
+    main_dir = '/data/edr76/gce-prob-prog-gp/'
     data_dir = main_dir + 'data/synthetic_data/' + sim_name + '/'
     return data_dir
 

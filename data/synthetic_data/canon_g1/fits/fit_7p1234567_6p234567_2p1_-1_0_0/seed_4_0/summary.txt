@@ -1,0 +1,1 @@
+GP -> Blg for canon_g1 simulation; Derivative GP; \gamma = 1
