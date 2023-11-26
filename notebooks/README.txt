@@ -5,6 +5,14 @@ Settings are always adjustable via the second cell of the notebooks.
 All other aspects of the fitting code. The plotting code may require some 
 adjustments. Contact me if there is any confusion.
 
+Set Up:
+1. Install Packages
+
+2. Reset Main Directory Location
+	a. Go to utils/ed_fcts.py
+	b. Find the "load_data_dir" function
+	c. Change main_data_dir to the directory containing the repo
+
 Steps to Using Code:
 
 1. Infer simulation normalizations from the data
