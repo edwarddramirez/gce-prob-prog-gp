@@ -593,9 +593,10 @@ def gnomview_ed(
     if return_projected_map:
         return img
     
-def gnomview_plot(map,title,cmap=None,cbar_title=r'$\log_{10}(\lambda)$',alpha=np.ones(hp.nside2npix(128))):
+def gnomview_plot(map,title=None,cmap=None,cbar_title=r'$\log_{10}(\lambda)$',alpha=np.ones(hp.nside2npix(128))):
     gnomview_ed(
     map,
+    fig = 1,
     rot=[0, 0],
     coord = 'G',
     xsize=2500,
@@ -780,19 +781,20 @@ def generate_temp_sample_maps(samples, ebinmodel, gp_samples = None, custom_num 
     names = [params_names.replace('S_', '') for params_names in param_names]
 
     temp_sample_dict = {}
+    num_samples = samples[param_names[0]].shape[0]
+
+    if custom_num is not None:
+        num_samples = custom_num
+
     if gp_samples is not None:
-        temp_sample_dict['gp'] = jnp.exp(gp_samples)
+        if custom_num == None:
+            num_samples = np.min([samples[param_names[0]].shape[0], gp_samples.shape[0]])
+        temp_sample_dict['gp'] = jnp.exp(gp_samples)[:num_samples]
+        
         names.remove('log_rate_u')
         if names == []:
             print('No templates to sum')
             return temp_sample_dict
-    
-        num_samples = np.min([samples[param_names[0]].shape[0], gp_samples.shape[0]])
-    else:
-        num_samples = samples[param_names[0]].shape[0]
-        
-    if custom_num is not None:
-        num_samples = custom_num
 
     ordered_temp_names = [name for name in all_temp_names if name in names]
     for name in ordered_temp_names:
@@ -1255,6 +1257,8 @@ def generate_fit_filename_from_ids(sim_id, temp_id, gp_id, blg_id, mod_id, svi_i
     # convert any '.' to 'p' ; necessary for smooth module loading
     sim_id_str = sim_id_str.replace('.', 'p')
     temp_id_str = temp_id_str.replace('.', 'p')
+    if temp_id_str == '0p0':
+        temp_id_str =  '0p'
     gp_id_str = gp_id_str.replace('.', 'p')
     blg_id_str = blg_id_str.replace('.', 'p')
     mod_id_str = mod_id_str.replace('.', 'p')
