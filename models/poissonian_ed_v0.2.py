@@ -37,11 +37,7 @@ import tinygp  # for Gaussian process regression
 from tinygp import GaussianProcess, kernels, transforms
 from utils import ed_fcts as ef
 from jax.scipy.special import logit, expit
-import tqdm
-
-# minipyro functions
-from jax import jit
-from collections import namedtuple
+from tqdm import tqdm
 
 # better to load GPU from the main script that runs the fit
 # os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -140,7 +136,6 @@ class EbinPoissonModel:
 
         # Ed's parameters
         ebin = 10,
-        rng_key = jax.random.PRNGKey(42),
         rig_temp_list = ['iso', 'psc', 'bub'], # 'iso', 'psc', 'bub'
         hyb_temp_list = ['pib', 'ics'], # pib, ics, blg
         var_temp_list = ['nfw', 'dsk'], # nfw, dsk
@@ -186,7 +181,6 @@ class EbinPoissonModel:
 
         # Ed's parameters
         self.ebin = 10,
-        self.rng_key = rng_key
         self.rig_temp_list = rig_temp_list
         self.hyb_temp_list = hyb_temp_list
         self.var_temp_list = var_temp_list
@@ -705,7 +699,8 @@ class EbinPoissonModel:
                     dy = jnp.zeros(self.Nsub)
                     x_sub = jnp.vstack([x_sub.T,dx.T,dy.T]).T
 
-                sample_keys = jax.random.split(self.rng_key, 3)
+                sample_keys = jax.random.split(jax.random.PRNGKey(
+                    np.random.randint(0, 1000000)), 3)
                 key, key_x, key_xp = sample_keys
 
                 _, gp_x = gp_u.condition(log_rate_u, x_sub, diag=1e-3) # p(x|u)
@@ -828,7 +823,7 @@ class EbinPoissonModel:
         self.svi_model_static_kwargs = model_static_kwargs
         
         return self.svi_results
-
+    
     def get_svi_samples(self, rng_key=jax.random.PRNGKey(42), num_samples=50000, expand_samples=True):
         
         rng_key, key = jax.random.split(rng_key)
@@ -842,7 +837,19 @@ class EbinPoissonModel:
             self.svi_samples = self.expand_samples(self.svi_samples)
             
         return self.svi_samples
-
+    
+    def expand_samples(self, samples):
+        new_samples = {}
+        for k in samples.keys():
+            if k in self.samples_expand_keys:
+                for i in range(samples[k].shape[-1]):
+                    new_samples[self.samples_expand_keys[k][i]] = samples[k][...,i]
+            elif k in ['auto_shared_latent']:
+                pass
+            else:
+                new_samples[k] = samples[k]
+        return new_samples
+        
     # NOTE: Can probably achieve this using Predictive
     def get_gp_samples(self, num_samples=1000, custom_mask = None):
         nside = self.nside
@@ -917,251 +924,7 @@ class EbinPoissonModel:
                 return log_rate_int
             
             def create_samples_int_(num_samples,x,samples,keys_ind):
-                for n in tqdm.tqdm(range(num_samples)):
-                    key = keys_ind[n]
-                    if n == 0:
-                        samples_int = create_gp_sample_(n,x,samples,key)
-                    else:
-                        samples_int = np.vstack((samples_int, create_gp_sample_(n,x,samples,key)))
-                return samples_int
-
-            keys_ind = np.random.randint(low=0,high=1000000,size=num_samples + 1)
-            self.gp_samples = create_samples_int_(num_samples,x_p,samples_u,keys_ind)
-            return self.gp_samples
-        else:
-            raise ValueError('GP is not enabled.')
-
-    #========== Custom SVI Implementation ==========
-    # NOTE: added option to optim argument to allow for different optimizers
-    def cfit_SVI(
-        self, rng_key=jax.random.PRNGKey(42),
-        guide='iaf', optimizer=None, num_flows=3, hidden_dims=[64, 64],
-        n_steps=5000, lr=0.006, num_particles=8, progress_bar = True,
-        **model_static_kwargs,
-    ):
-        if guide == 'mvn':
-            self.guide = autoguide.AutoMultivariateNormal(self.model)
-        elif guide == 'iaf':
-            self.guide = autoguide.AutoIAFNormal(
-                self.model,
-                num_flows=num_flows,
-                hidden_dims=hidden_dims,
-                nonlinearity=stax.Tanh
-            )
-        elif guide == 'iaf_mixture':
-            num_base_mixture = 8
-            class AutoIAFMixture(autoguide.AutoIAFNormal):
-                def get_base_dist(self):
-                    C = num_base_mixture
-                    mixture = dist.MixtureSameFamily(
-                        dist.Categorical(probs=jnp.ones(C) / C),
-                        dist.Normal(jnp.arange(float(C)), 1.)
-                    )
-                    return mixture.expand([self.latent_dim]).to_event()
-            self.guide = AutoIAFMixture(
-                self.model,
-                num_flows=num_flows,
-                hidden_dims=hidden_dims,
-                nonlinearity=stax.Tanh
-            )
-        else:
-            raise NotImplementedError
-
-        if optimizer == None:
-            optimizer = optim.optax_to_numpyro(
-                optax.chain(
-                    optax.clip(1.),
-                    optax.adam(lr),
-                )
-            )
-
-        svi = SVI(
-            self.model, self.guide, optimizer,
-            Trace_ELBO(num_particles=num_particles),
-            **model_static_kwargs,
-        )
-        self.svi_results = self.svi_loop(svi, progress_bar = progress_bar, num_steps = n_steps, rng_key = rng_key)
-        self.svi_model_static_kwargs = model_static_kwargs
-        
-        return self.svi_results
-    
-    def svi_loop(self, svi, progress_bar = True, num_steps = 1000, rng_key = jax.random.PRNGKey(0), early_stop = np.inf):
-        # update function
-        def body_fn(svi_state, _):
-            gp_rng_key = jax.random.split(svi_state.rng_key)[-1]
-            self.rng_key = gp_rng_key
-            svi_state, loss = svi.update(svi_state)
-            return svi_state, loss
-        
-        # define initial svi state
-        self.rng_key = rng_key
-        svi_state = svi.init(rng_key)
-        
-        # initialize lists of losses
-        losses = [] 
-        min_loss = np.inf
-        
-        # training loop
-        if progress_bar:
-            with tqdm.trange(1, num_steps + 1) as t:
-                batch = max(num_steps // 20, 1)
-                for i in t:
-                    svi_state, loss = jit(body_fn)(svi_state, None)
-                    losses.append(loss) 
-                    
-                    if loss < min_loss:
-                        min_loss = loss
-                        min_svi_state = svi_state
-                        min_step = i
-                        
-                    if abs(min_step - i) > early_stop:
-                        break
-
-                    if i % batch == 0:
-                        avg_loss = sum(losses[i - batch :]) / batch
-                        t.set_postfix_str(
-                            "init loss: {:.4f}, min loss {:.4f}, avg loss [{}-{}]: {:.4f}".format(
-                                losses[0], min_loss, i - batch + 1, i, avg_loss
-                            ),
-                            refresh=False,
-                        )
-        else:
-            for i in tqdm.tqdm(range(num_steps)):
-                svi_state, loss = jit(body_fn)(svi_state, None)
-                losses.append(loss)
-
-                if loss < min_loss:
-                    min_loss = loss
-                    min_svi_state = svi_state
-                    min_step = i
-                        
-                if abs(min_step - i) > early_stop:
-                    break
-                    
-        losses = jnp.stack(losses) 
-
-        # Report the final values of the variational parameters
-        # in the guide after training.
-        params = svi.get_params(svi_state)
-        min_params = svi.get_params(min_svi_state)
-        
-        SVIRunResult = namedtuple("SVIRunResult", ["params", "state", "losses", 
-                                                "min_params", "min_state", "min_loss"])
-        return SVIRunResult(params, svi_state, losses,
-                            min_params, min_svi_state, min_loss)
-    
-    def cget_svi_samples(self, rng_key=jax.random.PRNGKey(42), num_samples=50000, expand_samples=True):
-        # NOTE: Using sample_posterior twice failed previously
-        # If you get tracedarray conversion errors, consider generating samples
-        # using NumPyro Predictive fct (see gce-prob-prog-ed-v0.2/custom_svi_run/1d_svgp_bootval.ipynb)
-        rng_key, key = jax.random.split(rng_key)
-        self.svi_samples = self.guide.sample_posterior(
-            rng_key=rng_key,
-            params=self.svi_results.params,
-            sample_shape=(num_samples,)
-        )
-        self.min_svi_samples = self.guide.sample_posterior(
-            rng_key=rng_key,
-            params=self.svi_results.min_params,
-            sample_shape=(num_samples,)
-        )
-        
-        if expand_samples:
-            self.svi_samples = self.expand_samples(self.svi_samples)
-            self.min_svi_samples = self.expand_samples(self.min_svi_samples)
-            
-        return self.svi_samples, self.min_svi_samples
-    
-    def expand_samples(self, samples):
-        new_samples = {}
-        for k in samples.keys():
-            if k in self.samples_expand_keys:
-                for i in range(samples[k].shape[-1]):
-                    new_samples[self.samples_expand_keys[k][i]] = samples[k][...,i]
-            elif k in ['auto_shared_latent']:
-                pass
-            else:
-                new_samples[k] = samples[k]
-        return new_samples
-        
-    # NOTE: Can probably achieve this using Predictive
-    def cget_gp_samples(self, svi_results, samples, num_samples=1000, custom_mask = None, min_loss = False):
-        nside = self.nside
-        Nu = self.Nu
-
-        if custom_mask is None:
-            mask = self.mask_roi_arr[10]
-        else:
-            mask = custom_mask
-        x_p = ef.get_x_from_mask(mask,nside) # predicted x given sampled u
-        
-        if min_loss:
-            params = svi_results.min_params
-        else:
-            params = svi_results.params
-
-        if self.is_gp:
-            if self.u_option == 'float':
-                lru = params["lru"]
-                lau = params["lau"]
-
-                ru = 20. * expit(lru)
-                angu = 2. * jnp.pi * expit(lau)
-
-                xu = ru * jnp.cos(angu)
-                yu = ru * jnp.sin(angu)
-
-                xu_f = jnp.vstack([xu.T,yu.T]).T
-            else:
-                xu_f = self.xu_f
-            # generate kernel parameters
-            scale = self.gp_params[0]
-            amp = self.gp_params[1]
-            
-            if scale == 'float':
-                scale = params['scale']
-            if amp == 'float':
-                amp = params['amp']
-
-            # load kernel
-            if self.gp_kernel == 'ExpSquared': # most numerically stable
-                unit_kernel = kernels.ExpSquared()
-            elif self.gp_kernel == 'RationalQuadratic': # tested
-                alpha = self.gp_params[2]
-                if alpha == 'float':
-                    alpha = params['alpha']
-                unit_kernel = kernels.RationalQuadratic(alpha = alpha, distance = kernels.distance.L2Distance())
-            elif self.gp_kernel == 'Matern32': # untested
-                unit_kernel = kernels.Matern32()
-            elif self.gp_kernel == 'Matern52': # untested
-                unit_kernel = kernels.Matern52()
-
-            if self.gp_scale_option == 'Linear':
-                scale = jnp.ones(()) / scale # scale is a scale factor that rescales the spatial coords; not the same as the kernel lengthscale
-                base_kernel = amp**2. * transforms.Linear(scale, unit_kernel)
-            elif self.gp_scale_option == 'Cholesky':
-                scale_diag = jnp.exp(scale[:2])
-                scale_off = scale[2:]
-                base_kernel = amp**2. * transforms.Cholesky.from_parameters(scale_diag, scale_off, unit_kernel)
-
-            gp_u = GaussianProcess(base_kernel, xu_f, diag=1e-3)
-
-            samples_u = samples['log_rate_u']
-
-            # NOTE: Cannot load GP as input, so need to define sampling functions after
-            # defining the GP
-
-            # sub: 'Subset'
-            # int: 'interpolate'
-            @jax.jit
-            def create_gp_sample_(n,x,samples,key):
-                log_rate_sub = samples.at[n].get()
-                _, gp_int = gp_u.condition(log_rate_sub, x, diag=1e-3)
-                log_rate_int = gp_int.sample(jax.random.PRNGKey(key))
-                return log_rate_int
-            
-            def create_samples_int_(num_samples,x,samples,keys_ind):
-                for n in tqdm.tqdm(range(num_samples)):
+                for n in tqdm(range(num_samples)):
                     key = keys_ind[n]
                     if n == 0:
                         samples_int = create_gp_sample_(n,x,samples,key)
