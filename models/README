@@ -11,3 +11,17 @@ v0.2: Updated naming scheme.
     2. Allow IDs to specify custom bulge templates and simulation ID.
     
     3. Allow for true hybrid templates
+	
+	4. Added v0.2 ID system
+	
+	5. Added custom grids for inducing points
+	
+v0.3: Custom SVI implementation
+
+	1. Added basic custom SVI implementation
+	
+		Advantages:
+			- GP sampling for f | u is now random
+			- Can store state with minimum loss
+			- Can define early-stopping
+			- Can perform cross-validation/bootstrapping

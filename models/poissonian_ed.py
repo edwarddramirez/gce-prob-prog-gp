@@ -937,6 +937,7 @@ class EbinPoissonModel:
         self, rng_key=jax.random.PRNGKey(42),
         guide='iaf', optimizer=None, num_flows=3, hidden_dims=[64, 64],
         n_steps=5000, lr=0.006, num_particles=8, progress_bar = True,
+        early_stop = np.inf,
         **model_static_kwargs,
     ):
         if guide == 'mvn':
@@ -980,7 +981,7 @@ class EbinPoissonModel:
             Trace_ELBO(num_particles=num_particles),
             **model_static_kwargs,
         )
-        self.svi_results = self.svi_loop(svi, progress_bar = progress_bar, num_steps = n_steps, rng_key = rng_key)
+        self.svi_results = self.svi_loop(svi, progress_bar = progress_bar, num_steps = n_steps, rng_key = rng_key, early_stop = early_stop)
         self.svi_model_static_kwargs = model_static_kwargs
         
         return self.svi_results
@@ -1015,6 +1016,7 @@ class EbinPoissonModel:
                         min_step = i
                         
                     if abs(min_step - i) > early_stop:
+                        print('Stopped Early at Step ' + str(i))
                         break
 
                     if i % batch == 0:
@@ -1036,6 +1038,7 @@ class EbinPoissonModel:
                     min_step = i
                         
                 if abs(min_step - i) > early_stop:
+                    print('Stopped Early at Step ' + str(i))
                     break
                     
         losses = jnp.stack(losses) 
