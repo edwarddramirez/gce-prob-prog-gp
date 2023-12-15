@@ -1488,3 +1488,13 @@ def hex_grid(radius, d_unit):
     yall = np.array(yall)
     xy_all = np.stack((xall, yall), axis=1)
     return xy_all
+
+def gen_blg_name_(id):
+    all_blg_names = [
+    "macias2019", 
+    "coleman2019", 
+    "mcdermott2022", 
+    "mcdermott2022_bbp", 
+    "mcdermott2022_x"
+             ]
+    return [all_blg_names[id]]

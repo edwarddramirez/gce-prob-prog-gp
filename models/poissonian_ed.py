@@ -159,7 +159,7 @@ class EbinPoissonModel:
         p_option = 'match_u', # 'float' or 'fixed'
         p_grid_type = 'healpix_bins',
         p_weights = None,
-        Nsub = 1000,
+        Nsub = None,
         gp_kernel = 'ExpSquared',
         gp_params = [10., 'float'],
         gp_scale_option = 'Linear', # 'Linear' or 'Cholesky'
@@ -637,7 +637,10 @@ class EbinPoissonModel:
         # defining the likelihood with subsampling
         with numpyro.plate('data', size=len(data), dim=-1, subsample_size=self.Nsub) as ind:
             # initialize array of counts
-            mu = jnp.zeros(self.Nsub)
+            if self.Nsub == None:
+                mu = jnp.zeros(len(data))
+            else:
+                mu = jnp.zeros(self.Nsub)
             
             #===== rigid templates =====
             # all templates should be already normalized
