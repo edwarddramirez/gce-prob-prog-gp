@@ -43,6 +43,8 @@ import tqdm
 from jax import jit
 from collections import namedtuple
 
+SVIRunResult = namedtuple("SVIRunResult", ["params", "state", "losses", "min_params", "min_state", "min_loss"])
+
 # better to load GPU from the main script that runs the fit
 # os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -636,7 +638,7 @@ class EbinPoissonModel:
                 gp_u = GaussianProcess(kernel, xu_aug, diag=1e-3) # p(u)
             else:
                 kernel = base_kernel
-                gp_u = GaussianProcess(kernel, xu_f, diag=1e-3) # p(u)
+                gp_u = GaussianProcess(kernel, xu_f, diag=1e-3) # p(u)cget_gp_samples
             
             log_rate_u = numpyro.sample("log_rate_u", gp_u.numpyro_dist())
 
@@ -1048,10 +1050,9 @@ class EbinPoissonModel:
         params = svi.get_params(svi_state)
         min_params = svi.get_params(min_svi_state)
         
-        SVIRunResult = namedtuple("SVIRunResult", ["params", "state", "losses", 
-                                                "min_params", "min_state", "min_loss"])
-        return SVIRunResult(params, svi_state, losses,
-                            min_params, min_svi_state, min_loss)
+        # SVIRunResult = namedtuple("SVIRunResult", ["params", "state", "losses", 
+        #                                         "min_params", "min_state", "min_loss"])
+        return SVIRunResult(params, svi_state, losses, min_params, min_svi_state, min_loss)
     
     def cget_svi_samples(self, rng_key=jax.random.PRNGKey(42), num_samples=50000, expand_samples=True):
         # NOTE: Using sample_posterior twice failed previously
