@@ -11,6 +11,7 @@ import healpy as hp
 import jax
 import jax.numpy as jnp
 from jax.scipy.special import logit, expit
+from scipy.stats import chi2
 
 from templates.rigid_templates import EbinTemplate, Template, BulgeTemplates
 import corner as corner
@@ -593,14 +594,15 @@ def gnomview_ed(
     if return_projected_map:
         return img
     
-def gnomview_plot(map,title=None,cmap=None,cbar_title=r'$\log_{10}(\lambda)$',alpha=np.ones(hp.nside2npix(128))):
+def gnomview_plot(map,title=None,cmap=None,cbar_title=r'$\log_{10}(\lambda)$',alpha=np.ones(hp.nside2npix(128)), 
+                  xsize = 2500, ysize = 2500):
     gnomview_ed(
     map,
     fig = 1,
     rot=[0, 0],
     coord = 'G',
-    xsize=2500,
-    ysize=2500,
+    xsize=xsize,
+    ysize=ysize,
     reso=1,
     title=title, 
     hold=True,
@@ -664,7 +666,27 @@ def convert_masked_array_to_hp_array(masked_array, mask, log_option = False, nsi
     hp_map.mask = mask
     return hp_map
 
-def make_corner_plots(samples, with_mean_vlines = False, sim_vlines = False, temp_dict = None, with_log_rate_u = False, print_latex_means = False):
+# def make_corner_plots(samples, with_mean_vlines = False, sim_vlines = False, temp_dict = None, with_log_rate_u = False, print_latex_means = False):
+#     '''
+#     Make corner plots from samples dictionary
+
+#     Parameters
+#     ----------
+#     samples : dict
+#         Dictionary of samples from the numpyro model
+#     with_mean_vlines : bool, optional
+#         Whether to include vertical lines for the mean of each parameter
+#     with_log_rate_u : bool, optional
+#         Removes log_rate_u parameter samples if necessary
+#     '''
+#     names = list(samples.keys())
+#     if with_log_rate_u:
+#         names.remove('log_rate_u')
+#         if names == []:
+#             print('No parameters to plot')
+#             return None
+
+def make_corner_plots(samples, with_mean_vlines = False, sim_vlines = False, temp_dict = None, print_latex_means = False):
     '''
     Make corner plots from samples dictionary
 
@@ -678,11 +700,17 @@ def make_corner_plots(samples, with_mean_vlines = False, sim_vlines = False, tem
         Removes log_rate_u parameter samples if necessary
     '''
     names = list(samples.keys())
-    if with_log_rate_u:
+    if 'log_rate_u' in names:
         names.remove('log_rate_u')
-        if names == []:
-            print('No parameters to plot')
-            return None
+    elif 'log_rate' in names:
+        names.remove('log_rate')
+    if 'auto_shared_latent' in names:
+        names.remove('auto_shared_latent')
+    if '_auto_latent' in names:
+        names.remove('_auto_latent')
+    if names == []:
+        print('No parameters to plot')
+        return None
 
     template_sample_array = np.zeros((len(names), len(samples[names[0]])))
     for i in range(len(names)):
@@ -830,7 +858,7 @@ def generate_temp_sample_maps(samples, ebinmodel, gp_samples = None, custom_num 
 
     return temp_sample_dict
 
-def tot_log_counts_hist(temp_sample_dict, temp_sim_dict = None, temp_sim_names = None, bins = np.linspace(1,5,100), alpha = 0.75, histtype = 'step', gp_model_nfw = False):
+def tot_log_counts_hist(temp_sample_dict, temp_sim_dict = None, temp_sim_names = None, bins = np.linspace(1,5,100), alpha = 0.75, histtype = 'step', gp_model_nfw = False, gp_model_iso = False):
     fig = plt.figure(figsize=(12, 6), dpi= 120)
     ax = fig.add_subplot(111)
 
@@ -853,7 +881,7 @@ def tot_log_counts_hist(temp_sample_dict, temp_sim_dict = None, temp_sim_names =
     if temp_sim_dict is not None:
         names_sim = temp_sim_names # this piece is provided by the "settings" file since we only save a dictionary with all the fit parameters
         ordered_names_sim = [name for name in all_temp_names if name in names_sim]
-        if gp_model_nfw: # TODO: Update so it utilizes ID or difference between templates and sim templates
+        if gp_model_nfw and not gp_model_iso: # TODO: Update so it utilizes ID or difference between templates and sim templates
             for k in range(len(ordered_names_sim)):
                 name = ordered_names_sim[k]
                 idx = all_temp_names.index(name)
@@ -865,6 +893,19 @@ def tot_log_counts_hist(temp_sample_dict, temp_sim_dict = None, temp_sim_names =
                     ax.axvline(np.log10(temp_sum_sim), linestyle='--', c = ccode)
                 else:
                     temp_sum_sim = temp_sim_dict[name].sum(axis = 0)
+                    ax.axvline(np.log10(temp_sum_sim), linestyle='--', c = ccode)
+        elif gp_model_iso and gp_model_nfw:
+            for k in range(len(ordered_names_sim)):
+                name = ordered_names_sim[k]
+                idx = all_temp_names.index(name)
+                ccode = ccodes[idx]
+                if ordered_names_sim[k] == 'nfw' or ordered_names_sim[k] == 'iso':
+                    continue
+                elif ordered_names_sim[k] == 'blg':
+                    temp_sum_sim = temp_sim_dict['blg'].sum(axis = 0) + temp_sim_dict['nfw'].sum(axis = 0) + temp_sim_dict['iso'].sum(axis = 0)
+                    ax.axvline(np.log10(temp_sum_sim), linestyle='--', c = ccode)
+                else:
+                    temp_sum_sim = temp_sim_dict[name].sum(axis = 0) 
                     ax.axvline(np.log10(temp_sum_sim), linestyle='--', c = ccode)
         else:
             for k in range(len(ordered_names_sim)):
@@ -1051,14 +1092,14 @@ def cart_plot_1d(x, x1_plt, x2_plt, x1_c, x2_c, q, blg_coord, sim_coord=None, sl
     if slice_dir == 'horizontal':
         ax = fig.add_subplot(121)
 
-        y_slice = 2.
+        y_slice = slice_val
         ny = np.where(np.abs(x2_c - y_slice) < 0.5 * res_scale)[0][1]
 
         ax.plot(x[ny,:,0], q[1][ny,:], c = 'red', label = 'Prediction')
         ax.fill_between(x[ny,:,0], q[0][ny,:], q[2][ny,:], color = 'red', alpha = 0.3)
         ax.plot(x[ny,:,0], blg_coord[ny,:], c = 'blue', label = 'True')
         if sim_coord is not None:
-            ax.errorbar(x[ny,:,0], sim_coord[ny,:], yerr = np.sqrt(sim_coord[ny,:]), fmt = 'o', c = 'k', alpha = 0.5)
+            ax.errorbar(x[ny,:,0], sim_coord[ny,:], fmt = 'o', c = 'k', alpha = 0.5)
         ax.set_xlabel('x (deg)')
         ax.set_ylabel('Counts')
         ax.set_title('Slice at y = {:.2f} deg'.format(x[ny,0,1]))
@@ -1080,14 +1121,14 @@ def cart_plot_1d(x, x1_plt, x2_plt, x1_c, x2_c, q, blg_coord, sim_coord=None, sl
     elif slice_dir == 'vertical':
         ax = fig.add_subplot(121)
 
-        x_slice = -2
+        x_slice = slice_val
         nx = np.where(np.abs(x1_c - x_slice) < 0.5 * res_scale)[0][1]
 
         ax.plot(x[:,nx,1], q[1][:,nx], c = 'red', label = 'Prediction')
         ax.fill_between(x[:,nx,1], q[0][:,nx], q[2][:,nx], color = 'red', alpha = 0.3)
         ax.plot(x[:,nx,1], blg_coord[:,nx], c = 'blue', label = 'True')
         if sim_coord is not None:
-            ax.errorbar(x[:,nx,1], sim_coord[:,nx], yerr = np.sqrt(sim_coord[:,nx]), fmt = 'o', c = 'k', alpha = 0.5)
+            ax.errorbar(x[:,nx,1], sim_coord[:,nx], fmt = 'o', c = 'k', alpha = 0.5)
         ax.set_xlabel('y (deg)')
         ax.set_ylabel('Counts')
         ax.set_title('Slice at x = {:.2f} deg'.format(x[0,nx,0]))
@@ -1120,7 +1161,7 @@ def cart_plot_1d(x, x1_plt, x2_plt, x1_c, x2_c, q, blg_coord, sim_coord=None, sl
         ax.plot(r * np.sign(theta), blg_coord[ny,ny], c = 'blue', label = 'True')
         ax.axvline(0, color='k', ls = '--', lw = 0.5)
         if sim_coord is not None:
-            ax.errorbar(r * np.sign(theta), sim_coord[ny,ny], yerr = np.sqrt(sim_coord[ny,ny]), fmt = 'o', c = 'k', alpha = 0.5)
+            ax.errorbar(r * np.sign(theta), sim_coord[ny,ny], fmt = 'o', c = 'k', alpha = 0.5)
         ax.set_xlabel('r (deg)')
         ax.set_ylabel('Counts')
         ax.legend(fontsize = 14)
@@ -1151,7 +1192,7 @@ def cart_plot_1d(x, x1_plt, x2_plt, x1_c, x2_c, q, blg_coord, sim_coord=None, sl
         ax.fill_between(r * np.sign(-theta), q[0][ny,Nx-ny-1], q[2][ny,Nx-ny-1], color = 'red', alpha = 0.3)
         ax.plot(r * np.sign(-theta), blg_coord[ny,Nx-ny-1], c = 'blue', label = 'True')
         if sim_coord is not None:
-            ax.errorbar(r * np.sign(-theta), sim_coord[ny,Nx-ny-1], yerr = np.sqrt(sim_coord[ny,Nx-ny-1]), fmt = 'o', c = 'k', alpha = 0.5)
+            ax.errorbar(r * np.sign(-theta), sim_coord[ny,Nx-ny-1], fmt = 'o', c = 'k', alpha = 0.5)
         ax.axvline(0, color='k', ls = '--', lw = 0.5)
         ax.set_xlabel('r (deg)')
         ax.set_ylabel('Counts')
@@ -1370,7 +1411,6 @@ def summary_from_filename(id_str):
     print('SVI Fit Seed: ', svi_seed)
 
 def load_data_dir(sim_name):
-#     main_dir = '/home/edr76/gce-bulge-ed/gce-prob-prog-ed-v0.2/'
     main_dir = '/data/edr76/gce-prob-prog-gp/'
     data_dir = main_dir + 'data/synthetic_data/' + sim_name + '/'
     return data_dir

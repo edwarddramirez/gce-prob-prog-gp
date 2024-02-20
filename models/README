@@ -25,3 +25,28 @@ v0.3: Custom SVI implementation
 			- Can store state with minimum loss
 			- Can define early-stopping
 			- Can perform cross-validation/bootstrapping
+
+	2. Added additional debugging capabilities
+		- Can store loss and svi states at different steps in the code
+		- Can use svi states to calculate log-likelihoods or approximate posterior at each step
+
+	3. Added KL-Poissonian Minimization Technique for Template Extraction
+		- More refined
+	
+	4. Added KL-Rate Minimization Technique for Template Extraction
+		- Requirement: Add Trace_ELBO_2 file in numpyro.infer.ELBO file
+		- q(f) is sampled using inverse covariance matrix?!
+		- Code is messy
+
+	5. Have not added Chi2 template extraction technique
+		- Easy to add (see v0.3 code that does this)
+
+	6. sim_map_maker faster and uses split PRNGkeys instead of sequential PRNGKeys
+
+	7. Can sample from f | u much faster using vectorized GP sampling (cget_gp_samples_vec)
+
+	8. Cleaned up the code a bit by combining repeated lines of code into a function output
+		see load_templates, load_inducing_points, load_kernel fcts
+		can use more improvements
+
+	9. Not in GitHub, but have a lot of code for running multiple GP fits and analyzing results

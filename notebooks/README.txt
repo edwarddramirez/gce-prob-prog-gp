@@ -6,17 +6,17 @@ All other aspects of the fitting code. The plotting code may require some
 adjustments. Contact me if there is any confusion.
 
 Set Up:
-1. Install Packages
+0. Install Packages
 
-2. Reset Main Directory Location
+1. Reset Main Directory Location
 	a. Go to utils/ed_fcts.py
 	b. Find the "load_data_dir" function
 	c. Change main_data_dir to the directory containing the repo
 
 Steps to Using Code:
 
-1. Infer simulation normalizations from the data
-    Source: 1_poissonian_fit_temps.ipynb
+0. Infer realistic simulation normalizations from the data
+    Source: 0-temps_fit_to_real_data.ipynb
     
     Main Inputs to Change:
         sim_name - String identifying name of simulation directory
@@ -29,8 +29,8 @@ Steps to Using Code:
     Note: ._temp_list split into "rig", "hyb", and "var", but all that matters
     is the union of these lists.
 
-2. Generate pseudodata from mean normalizations of previous fit
-    Source: sim_map_maker.ipynb
+1. Generate pseudodata from mean normalizations of previous fit
+    Source: 1-sim_map_maker.ipynb
 
     Main Inputs to Change:
         sim_name - Specifies fit to data
@@ -38,19 +38,18 @@ Steps to Using Code:
     Output:
         Numpy arrays containing pseudodata
 
-3. Fit pseudodata using settings of choice
-    Source: 1_poissonian_fit_all.ipynb
+2. Fit pseudodata using desired model (GP + Bkgd Templates)
+    Source: 2-gp_fit.ipynb
 
     Main Inputs to Change:
-        See 2nd cell
+        See INPUT CELLs (One for GP fit, One for Template Extraction)
 
     Output:
         Posterior samples
         SVI results object
         (GP Samples if GP is used in the fit)
 
-4. Basic Plots
-    Source: plotter_gp.ipynb
+3. Load Fit Data
+    Source: 3-load_fit_data.ipynb
 
-    Note: This plotter file works only for the "GP -> Blg" fit. It requires changes
-    for "No GP" or "GP -> Blg + NFW" 1_poissonian_fit_temps.
+    Loads data obtained from previous fit and regenerates some plots from previous notebook
