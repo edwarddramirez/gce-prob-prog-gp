@@ -13,6 +13,11 @@ Set Up:
 	b. Find the "load_data_dir" function
 	c. Change main_data_dir to the directory containing the repo
 
+2. KL-Rate Minimization Template Extraction
+	a. Add Trace_ELBO_2 to numpyro.infer.ELBO file
+		guide_density -> 2. * guide_density
+	b. Comment out Trace_ELBO_2 from being imported (cannot use approach)
+
 Steps to Using Code:
 
 0. Infer realistic simulation normalizations from the data
